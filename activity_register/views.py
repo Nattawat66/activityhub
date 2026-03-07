@@ -163,6 +163,24 @@ def register_activity(request, post_id):
                             "link_url": f"/post/{post.id}/",
                         },
                     )
+                    # แจ้งผู้ที่บันทึกโพสต์ไว้ด้วย (ยกเว้นผู้ลงทะเบียนคนปัจจุบัน)
+                    try:
+                        saved_users = post.saves.exclude(id=request.user.id).all()
+                        for u in saved_users:
+                            Notification.objects.get_or_create(
+                                user=u,
+                                post=post,
+                                kind=getattr(Notification.Kind, "SAVED_FULL", Notification.Kind.SYSTEM),
+                                trigger_date=timezone.localdate(),
+                                defaults={
+                                    "title": post.title,
+                                    "message": f"กิจกรรมที่คุณบันทึกไว้เต็มแล้ว ({post.active_registrations_count()}/{post.slots_available})",
+                                    "link_url": f"/post/{post.id}/",
+                                },
+                            )
+                    except Exception:
+                        # หาก Notification model หรือความสัมพันธ์อื่น ๆ ยังไม่พร้อม ให้ข้ามเงียบ ๆ
+                        pass
                 except Exception:
                     pass
 

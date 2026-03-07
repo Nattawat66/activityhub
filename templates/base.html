@@ -137,6 +137,25 @@
             justify-content: flex-end;
             gap: 10px;
         }
+
+        /* Post unavailable modal styles */
+        .post-unavailable-modal .modal-dialog { max-width: 760px; }
+        .post-unavailable-modal .modal-content {
+          background: linear-gradient(180deg, #e8f2ff 0%, #cfe4ff 100%);
+          border-radius: 16px;
+          color: #062042;
+          padding: 1.2rem;
+          box-shadow: 0 18px 50px rgba(5,20,60,0.25);
+        }
+        .post-unavailable-modal .modal-body { font-size: 1.05rem; }
+        .post-unavailable-modal .btn-close-red {
+          background: #d9534f;
+          color: #fff;
+          border: 0;
+          padding: 0.6rem 1rem;
+          border-radius: 10px;
+          font-weight: 600;
+        }
     </style>
     {% endblock %}
 </head>
@@ -171,6 +190,23 @@
             <div id="notifList"></div>
             <div id="notifEmpty" class="p-4 text-center text-muted" style="display:none;">
               ยังไม่มีแจ้งเตือน
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Post unavailable modal (styled) -->
+    {% if user.is_authenticated %}
+    <div class="modal fade post-unavailable-modal" id="postUnavailableModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-body text-center">
+            <h4 class="fw-semibold mb-2">แจ้งเตือน</h4>
+            <p id="postUnavailableBody" class="mb-3">กิจกรรมนี้ไม่สามารถดูได้ในขณะนี้</p>
+            <div class="d-flex justify-content-center gap-2">
+              <button type="button" class="btn btn-close-red" data-bs-dismiss="modal">ตกลง</button>
             </div>
           </div>
         </div>
@@ -277,13 +313,19 @@
           const left = document.createElement("div");
           left.className = "notif-left";
 
+          // determine link and display when post is inaccessible
+          const canView = (typeof n.can_view_post === 'undefined') ? true : !!n.can_view_post;
+          const linkHref = canView ? (n.link_url || '#') : '#';
+          const inaccessibleHtml = (!canView && n.post_state) ? `<div class="mb-2 text-danger"><i class="fa-solid fa-ban"></i> โพสต์กิจกรรมนี้ไม่สามารถเข้าดูได้</div>` : "";
+
           // ข้อความหลัก
           left.innerHTML = `
             <div class="notif-name">${escapeHtml("{{ user.first_name }} {{ user.last_name }}")}</div>
+            ${inaccessibleHtml}
             <div class="notif-title">${escapeHtml(n.title || "")}</div>
             <div class="notif-meta">${escapeHtml(n.message || "")}</div>
             <div class="notif-actions">
-              <a href="${escapeHtml(n.link_url || "#")}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">ดู</a>
+              <a href="${escapeHtml(linkHref)}" class="btn btn-outline-secondary btn-sm rounded-pill px-3" ${!canView ? 'title="โพสต์ถูกลบ/ซ่อน (เฉพาะเจ้าของหรือผู้ดูแลเท่านั้น)"' : ''}>ดู</a>
               <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3"
                       ${n.is_read ? "disabled" : ""}>
                 ${n.is_read ? "อ่านแล้ว" : "ทำเครื่องหมายว่าอ่านแล้ว"}
@@ -300,6 +342,55 @@
             markBtn.addEventListener("click", async () => {
               await markNotificationAsRead(n.id);
             });
+          }
+
+          // เมื่อผู้ใช้กดดู ให้เช็คสถานะปัจจุบันกับเซิร์ฟเวอร์ (กรณีสถานะเปลี่ยนตั้งแต่โหลดรายการ)
+          const viewLink = left.querySelector('a');
+          if (viewLink) {
+            viewLink.addEventListener('click', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const postId = n.post_id || null;
+              const href = viewLink.getAttribute('href') || '#';
+              if (!postId) {
+                // ไม่มี post_id ให้ไปยังลิงก์ปกติ
+                window.location = href;
+                return;
+              }
+
+              try {
+                const r = await fetch('/notifications/api/can-view-post/?post_id=' + encodeURIComponent(postId), { credentials: 'same-origin' });
+                if (r.ok) {
+                  const j = await r.json();
+                  if (j.can_view) {
+                    window.location = href;
+                  } else {
+                    // แสดงป็อปอัพเมื่อโพสต์ไม่สามารถเข้าดูได้ (styled)
+                    try{
+                      const modalEl = document.getElementById('postUnavailableModal');
+                      const bodyEl = document.getElementById('postUnavailableBody');
+                      if(bodyEl) bodyEl.textContent = 'กิจกรรมนี้ไม่สามารถดูได้ในขณะนี้';
+                      if(modalEl){
+                        const bsModal = new bootstrap.Modal(modalEl);
+                        bsModal.show();
+                      } else {
+                        alert('กิจกรรมนี้ไม่สามารถดูได้ในขณะนี้');
+                      }
+                    }catch(err){
+                      console.error('show unavailable modal failed', err);
+                      alert('กิจกรรมนี้ไม่สามารถดูได้ในขณะนี้');
+                    }
+                  }
+                  return;
+                }
+              } catch (err) {
+                console.error('can-view-post check failed', err);
+              }
+
+              // fallback: ไปที่ลิงก์ถ้า API ล้มเหลว
+              window.location = href;
+            });
+            if (!canView) viewLink.classList.add('disabled');
           }
 
           row.appendChild(left);
@@ -345,7 +436,7 @@
           modal.addEventListener("shown.bs.modal", loadNotifications);
         }
 
-        setInterval(loadNotifications, 60000);
+        setInterval(loadNotifications, 10000);
 
         // Poll chat unread count separately so chat icon updates even when modal not opened
         async function loadChatUnread(){
@@ -370,7 +461,71 @@
         }
 
         loadChatUnread();
-        setInterval(loadChatUnread, 30000);
+        setInterval(loadChatUnread, 2000);
+
+        // WebSocket for real-time notifications
+        (function(){
+          let ws;
+          let backoff = 1000;
+          const maxBackoff = 30000;
+
+          function connect(){
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const host = window.location.host;
+            const path = '/ws/notifications/';
+            const url = protocol + host + path;
+
+            try{
+              ws = new WebSocket(url);
+            }catch(e){
+              console.debug('ws connect error', e);
+              scheduleReconnect();
+              return;
+            }
+
+            ws.onopen = function(){
+              console.debug('Notifications WS opened');
+              backoff = 1000;
+            };
+
+            ws.onmessage = function(e){
+              try{
+                const d = JSON.parse(e.data || '{}');
+                if(d.type === 'notification'){
+                  // refresh badge and list; increment badge quickly then reload
+                  const badge = document.getElementById('notifBadge');
+                  if(badge){
+                    const cur = parseInt(badge.textContent || '0', 10) || 0;
+                    badge.style.display = 'inline-block';
+                    badge.textContent = cur + 1;
+                  }
+                  // refresh list to show new item (debounce briefly)
+                  setTimeout(()=>{ try{ loadNotifications(); }catch(_){} }, 250);
+                }
+              }catch(_){}
+            };
+
+            ws.onclose = function(){
+              console.debug('Notifications WS closed, scheduling reconnect');
+              scheduleReconnect();
+            };
+
+            ws.onerror = function(err){
+              console.debug('Notifications WS error', err);
+              try{ ws.close(); }catch(_){}
+            };
+          }
+
+          function scheduleReconnect(){
+            setTimeout(function(){
+              backoff = Math.min(maxBackoff, backoff * 1.8);
+              connect();
+            }, backoff);
+          }
+
+          // start connection after DOM ready
+          connect();
+        })();
       });
     </script>
     {% endif %}

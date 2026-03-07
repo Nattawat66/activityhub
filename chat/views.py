@@ -44,8 +44,19 @@ def inbox_view(request):
 
         if room.room_type == 'GROUP':
             post = room.post
-            if post and post.image:
-                avatar_url = post.image.url
+            if post:
+                if post.image:
+                    avatar_url = post.image.url
+                else:
+                    try:
+                        if post.organizer and hasattr(post.organizer, 'profile') and getattr(post.organizer.profile, 'profile_picture', None):
+                            avatar_url = post.organizer.profile.profile_picture.url
+                        elif getattr(post.organizer, 'profile_picture', None):
+                            avatar_url = post.organizer.profile_picture.url
+                        else:
+                            avatar_url = None
+                    except Exception:
+                        avatar_url = None
             title = room.name or (post.title if post else 'แชทกลุ่มกิจกรรม')
             subtitle = 'แชทกลุ่มกิจกรรม'
             if post:

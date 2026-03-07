@@ -287,12 +287,21 @@
 
                 <!-- REGISTER BUTTON: show_register ประเมินโดย view (รวมเงื่อนไข 1 วันก่อน, เต็ม, ปิดรับ) -->
                 {% if post.show_register %}
+                {% if user.is_authenticated %}
                 <a
                   href="{% url 'activity_register:register_activity' post.id %}"
                   class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"
                 >
                   สมัคร
                 </a>
+                {% else %}
+                <a
+                  href="{% url 'login' %}?next={{ request.path }}"
+                  class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"
+                >
+                  สมัคร
+                </a>
+                {% endif %}
                 {% endif %}
 
               </div>

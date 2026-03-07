@@ -17,14 +17,18 @@
     <div class="col">
       <div class="card shadow-sm border-0 h-100">
         {% if post.image %}
-        <div class="activity-img-wrap">
-          <img src="{{ post.image.url }}" class="card-img-top" alt="{{ post.title }}">
-        </div>
+        <a href="{% url 'post:post_detail' post.id %}" class="text-decoration-none text-dark">
+          <div class="activity-img-wrap">
+            <img src="{{ post.image.url }}" class="card-img-top" alt="{{ post.title }}">
+          </div>
+        </a>
         {% endif %}
 
         <div class="card-body">
-          <h5 class="card-title">{{ post.title }}</h5>
-          <p class="card-text text-muted">{{ post.description|truncatechars:100 }}</p>
+          <a href="{% url 'post:post_detail' post.id %}" class="text-decoration-none text-dark">
+            <h5 class="card-title">{{ post.title }}</h5>
+            <p class="card-text text-muted">{{ post.description|truncatechars:100 }}</p>
+          </a>
         </div>
         <div class="card-footer bg-white border-0 d-flex align-items-center">
           <a href="{% url 'profile_detail' post.organizer.email %}">

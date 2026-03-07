@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h4 class="card-title">โพสต์นี้ไม่สามารถเข้าดูได้</h4>
+      <p class="text-muted">โพสต์นี้อาจถูกลบ ถูกซ่อน หรือยังไม่ได้รับการอนุมัติ</p>
+
+      {% if can_view %}
+        <div class="alert alert-info">คุณเป็นเจ้าของโพสต์หรือผู้ดูแลระบบ สามารถดูรายละเอียดได้ด้านล่าง</div>
+        <h5>{{ post.title }}</h5>
+        <p>{{ post.description|linebreaksbr }}</p>
+        <a href="{% url 'post:post_detail' post.id %}" class="btn btn-primary">ดูรายละเอียด (เจ้าของ/แอดมิน)</a>
+      {% else %}
+        <div class="mb-3">
+          <a href="{% url 'home:home' %}" class="btn btn-outline-secondary">กลับหน้าหลัก</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

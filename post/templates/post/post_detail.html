@@ -42,6 +42,17 @@
     font-weight: 600;
     font-size: .95rem;
   }
+
+  /* Schedule image: keep centered and proportional */
+  .schedule-image {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(2,10,30,0.08);
+  }
 </style>
 
 <div class="container-fluid px-4 mt-3">
@@ -109,20 +120,30 @@
                 {% endif %}
 
                 {% if active_reg_count > 0 %}
-                  <button
-                    type="button"
-                    class="btn btn-link btn-sm p-0 ms-2 align-baseline"
-                    data-bs-toggle="modal"
-                    data-bs-target="#registrantModal"
-                  >
-                    ดูรายชื่อผู้สมัคร ({{ active_reg_count }})
-                  </button>
+                  {% if user.is_authenticated %}
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm p-0 ms-2 align-baseline"
+                      data-bs-toggle="modal"
+                      data-bs-target="#registrantModal"
+                    >
+                      ดูรายชื่อผู้สมัคร ({{ active_reg_count }})
+                    </button>
+                  {% else %}
+                    <a href="{% url 'login' %}?next={{ request.path }}" class="btn btn-link btn-sm p-0 ms-2 align-baseline">
+                      ดูรายชื่อผู้สมัคร ({{ active_reg_count }})
+                    </a>
+                  {% endif %}
                 {% endif %}
               </div>
 
               {% if post.slots_available != 0 and is_full %}
                 <div class="mt-1">
                   <span class="badge bg-danger">เต็มแล้ว</span>
+                </div>
+              {% elif not post.allow_register and post.slots_available != 0 and post.create_group or not post.allow_register and post.slots_available != 0 and active_reg_count > 0 %}
+                <div class="mt-1">
+                  <span class="badge bg-secondary">ปิดรับสมัครแล้ว</span>
                 </div>
               {% endif %}
             </div>
@@ -145,7 +166,7 @@
             <span>หมวดหมู่: {{ post.category }}</span>
           </div>
 
-          {% if has_chat_room and user_is_registered %}
+          {% if can_access_chat %}
           <a href="{% url 'chat:activity_chat' post.id %}"
             class="btn btn-outline-primary rounded-pill px-4 fw-semibold">
             แชทกิจกรรม
@@ -243,6 +264,10 @@
                     <button type="button" class="btn btn-secondary rounded-pill px-4 fw-semibold" disabled>
                       เต็มแล้ว
                     </button>
+                  {% elif not post.allow_register and post.slots_available != 0 and post.create_group or not post.allow_register and post.slots_available != 0 and active_reg_count > 0 %}
+                    <button type="button" class="btn btn-secondary rounded-pill px-4 fw-semibold" disabled>
+                      ปิดรับสมัครแล้ว
+                    </button>
                   {% endif %}
                 {% endif %}
                 </div>
@@ -250,7 +275,7 @@
               {% else %}
                 {% if post.allow_register and not is_full %}
                   <a
-                    href="{% url 'activity_register:register_activity' post.id %}"
+                    href="{% url 'login' %}?next={{ request.path }}"
                     class="btn btn-success rounded-pill px-4 fw-semibold"
                   >
                     สมัคร
@@ -258,6 +283,10 @@
                 {% elif post.slots_available != 0 and is_full %}
                   <button type="button" class="btn btn-secondary rounded-pill px-4 fw-semibold" disabled>
                     เต็มแล้ว
+                  </button>
+                {% elif not post.allow_register and post.slots_available != 0 and post.create_group or not post.allow_register and post.slots_available != 0 and active_reg_count > 0 %}
+                  <button type="button" class="btn btn-secondary rounded-pill px-4 fw-semibold" disabled>
+                    ปิดรับสมัครแล้ว
                   </button>
                 {% endif %}
               {% endif %}
@@ -425,11 +454,11 @@
 
     {% if post.schedule %}
       <div class="mb-3" style="background: #e8f4fd; border: 1px solid #b8daff; border-radius: 14px; padding: 1.5rem;">
-        <div class="text-center">
+        <div class="d-flex justify-content-center">
           <img
             src="{{ post.schedule.url }}"
             alt="กำหนดการกิจกรรม"
-            class="img-fluid rounded"
+            class="schedule-image"
           />
         </div>
 
@@ -653,7 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
               } else {
                 // no cooldown -> show register if allowed
                 const canShow = block.dataset.showRegister === 'true';
-                if (canShow) html += ` <a href="{% url 'activity_register:register_activity' post.id %}" class="btn btn-success rounded-pill px-4 fw-semibold ms-2">สมัคร</a>`;
+                if (canShow) html += ` <a href="{% if user.is_authenticated %}{% url 'activity_register:register_activity' post.id %}{% else %}{% url 'login' %}?next={{ request.path }}{% endif %}" class="btn btn-success rounded-pill px-4 fw-semibold ms-2">สมัคร</a>`;
               }
               block.innerHTML = html;
 
@@ -690,7 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (block) {
           const canShow = block.dataset.showRegister === 'true';
           if (canShow) {
-            block.innerHTML = `<a href="{% url 'activity_register:register_activity' post.id %}" class="btn btn-success rounded-pill px-4 fw-semibold ms-2">สมัคร</a>`;
+            block.innerHTML = `<a href="{% if user.is_authenticated %}{% url 'activity_register:register_activity' post.id %}{% else %}{% url 'login' %}?next={{ request.path }}{% endif %}" class="btn btn-success rounded-pill px-4 fw-semibold ms-2">สมัคร</a>`;
           } else {
             block.innerHTML = `<span class="badge bg-light rounded-pill ms-2">-</span>`;
           }
@@ -721,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (block) {
           const canShow = block.dataset.showRegister === 'true';
           if (canShow) {
-            block.innerHTML = `<a href="{% url 'activity_register:register_activity' post.id %}" class="btn btn-success rounded-pill px-4 fw-semibold ms-2">สมัคร</a>`;
+            block.innerHTML = `<a href="{% if user.is_authenticated %}{% url 'activity_register:register_activity' post.id %}{% else %}{% url 'login' %}?next={{ request.path }}{% endif %}" class="btn btn-success rounded-pill px-4 fw-semibold ms-2">สมัคร</a>`;
           } else {
             block.innerHTML = `<span class="badge bg-light rounded-pill ms-2">-</span>`;
           }

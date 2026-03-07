@@ -329,6 +329,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
+  // Ensure chat/unread notifications are marked read for this room (helpful if server-side marking missed)
+  (async function markChatReadOnLoad(){
+    try{
+      const form = new URLSearchParams();
+      if ({{ is_group|yesno:'true,false' }}) {
+        {% if post %}
+        form.append('post_id', String({{ post.id }}));
+        {% endif %}
+      } else {
+        {% if other_user %}
+        form.append('dm_email', '{{ other_user.email }}');
+        {% endif %}
+      }
+      await fetch('/notifications/api/mark-chat-read/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': window.CSRF_TOKEN,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: form.toString(),
+        credentials: 'same-origin'
+      });
+
+      // refresh chat-unread badge
+      try{
+        const r = await fetch('/notifications/api/chat-unread/', { credentials: 'same-origin' });
+        if(r.ok){
+          const j = await r.json();
+          const chatBadge = document.getElementById('chatBadge');
+          if(chatBadge){
+            const n = parseInt(j.chat_unread || 0, 10);
+            if(n > 0){ chatBadge.style.display = 'inline-block'; chatBadge.textContent = n; }
+            else { chatBadge.style.display = 'none'; }
+          }
+        }
+      }catch(e){/*ignore*/}
+    }catch(e){/*ignore*/}
+  })();
+
   let chatSocket = null;
   try {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';

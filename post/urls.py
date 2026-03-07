@@ -8,6 +8,7 @@ urlpatterns = [
     path('<int:post_id>/', views.post_detail_view, name='post_detail'),
     path('<int:post_id>/edit/', views.post_update_view, name='post_edit'),
     path('<int:post_id>/delete/', views.post_delete_view, name='post_delete'),
+    path('<int:post_id>/unavailable/', views.post_unavailable, name='post_unavailable'),
 
     # ✅ ปิดรับสมัคร (กดจากหน้าแก้ไข)
     path('<int:post_id>/close-registration/', views.close_registration, name='close_registration'),

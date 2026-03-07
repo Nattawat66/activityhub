@@ -211,8 +211,24 @@ def post_detail_view(request, post_id):
     has_chat_room = ChatRoom.objects.filter(post=post).exists()
 
     user_is_registered = False
-    if my_reg and my_reg.status == 'ACTIVE':
+    if my_reg and my_reg.status == ActivityRegistration.Status.ACTIVE:
         user_is_registered = True
+
+    # คำนวณจำนวนผู้สมัครแอคทีฟ และสิทธิ์การเข้าร่วมแชท (สำหรับ template)
+    active_reg_count = post.active_registrations_count()
+    # กฎการแสดงปุ่มแชต:
+    # - หากระบบเปิดให้สมัคร (post.allow_register == True): แสดงแชตให้เฉพาะผู้ที่สมัครแล้ว (`user_is_registered`)
+    # - หากระบบไม่มีการสมัคร (post.allow_register == False) และผู้โพสต์สร้างห้องแชทไว้ (post.create_group):
+    #   ให้แสดงปุ่มแชต (สำหรับผู้ที่ล็อกอิน) โดยไม่ต้องสมัคร
+    # นอกจากนี้ต้องมีห้องแชทจริง (`has_chat_room`) และผู้ใช้ล็อกอิน
+    can_access_chat = False
+    if request.user.is_authenticated and has_chat_room:
+        if post.allow_register:
+            # ระบบใช้การสมัคร -> ต้องเป็นผู้สมัครเท่านั้น
+            can_access_chat = user_is_registered
+        else:
+            # ระบบไม่มีการสมัคร -> ถ้าเจ้าของสร้างห้องแชทไว้ แสดงได้
+            can_access_chat = bool(post.create_group)
 
     # 💡 ทริคสำคัญ: ถ้าสามารถสมัครใหม่ได้ เราจะแปลง my_reg เป็น None ตอนส่งให้หน้า Template
     # เพื่อให้เงื่อนไขใน HTML ข้ามสถานะ CANCELED และไปแสดงปุ่ม "สมัครกิจกรรม" 
@@ -227,10 +243,11 @@ def post_detail_view(request, post_id):
         'avg_rating_int': avg_rating_int,
         'review_count': review_count,
         'my_reg': my_reg_for_template,  # ใช้ตัวแปรนี้แทน my_reg ปกติ
-        'active_reg_count': post.active_registrations_count(),
+        'active_reg_count': active_reg_count,
         'is_full': post.is_full(),
         'has_chat_room': has_chat_room,
         'user_is_registered': user_is_registered,
+        'can_access_chat': can_access_chat,
         'cancel_undo_until_iso': my_reg.cancel_undo_until.isoformat() if my_reg and my_reg.cancel_undo_until else '',
         'cooldown_until_iso': cooldown_until_iso,
     }
@@ -332,3 +349,23 @@ def map_overview(request):
         "enable_geolocation": True,
     }
     return render(request, "home/map.html", context)
+
+
+# ------------------------------
+# ฟังก์ชัน: หน้าแจ้งว่าโพสต์ไม่สามารถเข้าถึงได้ (ลบ/ซ่อน/ยังไม่อนุมัติ)
+# ------------------------------
+def post_unavailable(request, post_id):
+    post = get_object_or_404(Post, id=post_id)
+
+    # ถ้าโพสต์ยังปกติ ให้ไปที่รายละเอียดปกติ
+    if not (getattr(post, 'is_deleted', False) or getattr(post, 'is_hidden', False) or getattr(post, 'status', None) != 'APPROVED'):
+        return redirect('post:post_detail', post_id=post.id)
+
+    # เจ้าของหรือแอดมินสามารถดูเนื้อหาได้
+    can_view = False
+    try:
+        can_view = request.user.is_authenticated and (request.user.is_superuser or request.user.id == getattr(post.organizer, 'id', None))
+    except Exception:
+        can_view = False
+
+    return render(request, 'post/post_unavailable.html', {'post': post, 'can_view': can_view})

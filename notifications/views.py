@@ -65,6 +65,23 @@ def _ensure_activity_notifications(user):
 
     Post = apps.get_model("post", "Post")
 
+    def _remaining_slots(post) -> int | None:
+        """
+        คืนจำนวนที่เหลือ (int) หรือ None หากไม่จำกัด
+        """
+        cap = getattr(post, "slots_available", None)
+        if cap is None or cap <= 0:
+            return None
+        try:
+            from activity_register.models import ActivityRegistration
+            reg_count = post.registrations.filter(status=ActivityRegistration.Status.ACTIVE).count()
+        except Exception:
+            try:
+                reg_count = post.registrations.count()
+            except Exception:
+                reg_count = 0
+        return cap - reg_count
+
     base_post_filter = dict(
         is_deleted=False,
         is_hidden=False,
@@ -79,6 +96,10 @@ def _ensure_activity_notifications(user):
         **base_post_filter,
     )
     for p in saved_posts_3:
+        remaining = _remaining_slots(p)
+        # หากกิจกรรมเต็มแล้ว ให้ข้ามการสร้าง reminder (จะมีการแจ้งเตือนเต็มตอนสมัคร)
+        if remaining is not None and remaining <= 0:
+            continue
         status_text = _capacity_status_text(p)
         Notification.objects.get_or_create(
             user=user,
@@ -97,6 +118,9 @@ def _ensure_activity_notifications(user):
         **base_post_filter,
     )
     for p in saved_posts_1:
+        remaining = _remaining_slots(p)
+        if remaining is not None and remaining <= 0:
+            continue
         status_text = _capacity_status_text(p)
         Notification.objects.get_or_create(
             user=user,
@@ -120,8 +144,11 @@ def _ensure_activity_notifications(user):
             p = getattr(reg, "post", None)
             if not p or not getattr(p, "event_date", None):
                 continue
-
             if timezone.localdate(p.event_date) == d1 and (not p.is_deleted) and (not p.is_hidden) and (p.status == "APPROVED"):
+                remaining = _remaining_slots(p)
+                # ถ้าเต็มแล้ว ให้ข้ามการสร้าง reminder (และผู้จัดจะได้รับ OWNER_FULL ตอนที่เต็ม)
+                if remaining is not None and remaining <= 0:
+                    continue
                 status_text = _capacity_status_text(p)
                 Notification.objects.get_or_create(
                     user=user,
@@ -149,6 +176,10 @@ def _ensure_activity_notifications(user):
             reg_count = p.registrations.count()
         except Exception:
             reg_count = 0
+        remaining = _remaining_slots(p)
+        # ถ้าเต็มแล้ว ให้ข้าม OWNER_STATUS_REMINDER (owner ควรได้รับ OWNER_FULL ตอนที่เต็ม)
+        if remaining is not None and remaining <= 0:
+            continue
 
         status_text = _capacity_status_text(p, reg_count=reg_count)
         Notification.objects.get_or_create(
@@ -172,6 +203,27 @@ def api_list_notifications(request):
     qs = Notification.objects.filter(user=request.user).order_by("-created_at")[:30]
     data = []
     for n in qs:
+        # determine post visibility for the current user so frontend can
+        # show an indicator if the post was deleted/hidden/unapproved
+        post_state = None
+        can_view_post = True
+        if n.post_id:
+            try:
+                p = n.post
+                if getattr(p, 'is_deleted', False):
+                    post_state = 'deleted'
+                elif getattr(p, 'is_hidden', False):
+                    post_state = 'hidden'
+                elif getattr(p, 'status', None) != 'APPROVED':
+                    post_state = 'unapproved'
+
+                if post_state:
+                    # only owner or superuser may view deleted/hidden/unapproved posts
+                    if not (request.user.is_superuser or request.user.id == getattr(p.organizer, 'id', None)):
+                        can_view_post = False
+            except Exception:
+                post_state = None
+
         data.append(
             {
                 "id": n.id,
@@ -179,13 +231,52 @@ def api_list_notifications(request):
                 "title": n.title,
                 "message": n.message,
                 "link_url": n.link_url,
+                "post_id": n.post_id,
                 "is_read": n.is_read,
                 "created_at": n.created_at.isoformat(),
+                "post_state": post_state,
+                "can_view_post": can_view_post,
             }
         )
 
     unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
     return JsonResponse({"unread": unread_count, "items": data})
+
+
+@login_required
+@require_GET
+def api_can_view_post(request):
+    """Check if a post is viewable by the current user.
+
+    Query params: ?post_id=123
+    Returns: {post_state: 'deleted'|'hidden'|'unapproved'|None, can_view: bool}
+    """
+    post_id = request.GET.get('post_id')
+    if not post_id:
+        return JsonResponse({'error': 'missing post_id'}, status=400)
+
+    try:
+        Post = apps.get_model('post', 'Post')
+        p = Post.objects.filter(id=post_id).first()
+        if not p:
+            return JsonResponse({'post_state': 'deleted', 'can_view': False})
+
+        post_state = None
+        if getattr(p, 'is_deleted', False):
+            post_state = 'deleted'
+        elif getattr(p, 'is_hidden', False):
+            post_state = 'hidden'
+        elif getattr(p, 'status', None) != 'APPROVED':
+            post_state = 'unapproved'
+
+        can_view = True
+        if post_state:
+            if not (request.user.is_superuser or request.user.id == getattr(p.organizer, 'id', None)):
+                can_view = False
+
+        return JsonResponse({'post_state': post_state, 'can_view': can_view})
+    except Exception:
+        return JsonResponse({'post_state': None, 'can_view': False})
 
 
 @login_required
@@ -242,3 +333,52 @@ def mark_notification_as_read(request):
         return JsonResponse({"success": True, "unread": unread_count})
     except Notification.DoesNotExist:
         return JsonResponse({"success": False, "error": "Notification not found"}, status=404)
+
+
+@login_required
+@require_POST
+def api_mark_chat_read(request):
+    """Mark chat-related notifications and ChatMessage rows as read for the current user.
+
+    Accepts form-encoded `post_id` (for group activity chat) or `dm_email` (for DM chats).
+    Returns JSON {ok: True}.
+    """
+    post_id = request.POST.get('post_id')
+    dm_email = request.POST.get('dm_email')
+
+    try:
+        # mark Notification rows
+        from notifications.models import Notification as NotifModel
+        if post_id:
+            link = f"/chat/activity/{post_id}/"
+            NotifModel.objects.filter(user=request.user, kind=NotifModel.Kind.CHAT_MESSAGE, link_url=link, is_read=False).update(is_read=True)
+            # also mark ChatMessage for the room as read
+            try:
+                from chat.models import ChatRoom, ChatMessage
+                room = ChatRoom.objects.filter(post_id=post_id, room_type='GROUP').first()
+                if room:
+                    ChatMessage.objects.filter(room=room, is_read=False).exclude(sender=request.user).update(is_read=True)
+            except Exception:
+                pass
+
+        elif dm_email:
+            # DM link_url uses /chat/dm/<email>/ as created by notify_chat_message
+            NotifModel.objects.filter(user=request.user, kind=NotifModel.Kind.CHAT_MESSAGE, link_url__startswith=f"/chat/dm/{dm_email}", is_read=False).update(is_read=True)
+            try:
+                from users.models import User
+                from chat.models import ChatRoom, ChatMessage, ChatMembership
+                other = User.objects.filter(email=dm_email).first()
+                if other:
+                    # find DM room shared by both
+                    my_room_ids = set(ChatMembership.objects.filter(user=request.user).values_list('room_id', flat=True))
+                    other_room_ids = set(ChatMembership.objects.filter(user=other).values_list('room_id', flat=True))
+                    common = list(my_room_ids & other_room_ids)
+                    room = ChatRoom.objects.filter(id__in=common, room_type='DM').first()
+                    if room:
+                        ChatMessage.objects.filter(room=room, is_read=False).exclude(sender=request.user).update(is_read=True)
+            except Exception:
+                pass
+
+        return JsonResponse({"ok": True})
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)

@@ -223,7 +223,26 @@ def notify_users_when_post_updated(sender, instance: Post, created, **kwargs):
     - ซ่อน/ลบ (โดยแอดมิน) → แจ้งผู้สมัคร + เจ้าของโพสต์ด้วย
     """
     if created:
-        # ✅ แจ้งเตือนผู้ติดตามเมื่อมีโพสต์ใหม่
+        # หากโพสต์ยังไม่ถูกอนุมัติ/ถูกซ่อน/ถูกลบ -> ไม่ส่งการแจ้งเตือน
+        if instance.is_deleted or instance.is_hidden or instance.status != "APPROVED":
+            return
+
+        today = timezone.localdate()
+
+        # แจ้งเจ้าของว่าโพสต์ของเขาได้รับการอนุมัติและเผยแพร่แล้ว
+        Notification.objects.get_or_create(
+            user=instance.organizer,
+            post=instance,
+            kind=Notification.Kind.OWNER_POSTED,
+            trigger_date=today,
+            defaults={
+                "title": instance.title,
+                "message": f"โพสต์กิจกรรมของคุณได้รับการอนุมัติและเผยแพร่แล้ว: \"{instance.title}\"",
+                "link_url": f"/post/{instance.id}/",
+            },
+        )
+
+        # แจ้งผู้ติดตาม (followers) ว่ามีกิจกรรมใหม่
         _notify_followers_new_post(instance)
         # schedule reminders for organizer/savers/registrants
         _schedule_reminders_for_post(instance)
@@ -267,6 +286,26 @@ def notify_users_when_post_updated(sender, instance: Post, created, **kwargs):
                 },
             )
         return
+
+    # หากสถานะถูกเปลี่ยนเป็น APPROVED (เช่น แอดมินอนุมัติโพสต์) -> แจ้งเจ้าของและผู้ติดตาม
+    if old.status != instance.status and instance.status == "APPROVED":
+        if instance.is_deleted or instance.is_hidden:
+            pass
+        else:
+            today = timezone.localdate()
+            Notification.objects.get_or_create(
+                user=instance.organizer,
+                post=instance,
+                kind=Notification.Kind.OWNER_POSTED,
+                trigger_date=today,
+                defaults={
+                    "title": instance.title,
+                    "message": f"โพสต์กิจกรรมของคุณได้รับการอนุมัติและเผยแพร่แล้ว: \"{instance.title}\"",
+                    "link_url": f"/post/{instance.id}/",
+                },
+            )
+            _notify_followers_new_post(instance)
+            _schedule_reminders_for_post(instance)
 
     # ✅ ตรวจสอบการแก้ไขฟิลด์
     changed = []
@@ -376,10 +415,28 @@ def notify_chat_message(sender_user, room, message_preview=""):
 
     for m in members:
         # ไม่ใช้ get_or_create กับ trigger_date เพื่อให้แจ้งทุกครั้ง
-        Notification.objects.create(
+        notif = Notification.objects.create(
             user=m.user,
             kind=Notification.Kind.CHAT_MESSAGE,
             title=f"ข้อความใหม่จาก {sender_user.get_full_name() or sender_user.email}",
             message=message_preview[:100] if message_preview else "ส่งข้อความมาหาคุณ",
             link_url=f"/chat/dm/{sender_user.email}/" if room.room_type == "DM" else f"/chat/activity/{room.post_id}/" if room.post_id else "/chat/inbox/",
         )
+
+        # ส่ง push ทันทีผ่าน channel layer ไปยังกลุ่มผู้ใช้ (notif_<user_id>)
+        try:
+            from asgiref.sync import async_to_sync
+            from channels.layers import get_channel_layer
+
+            channel_layer = get_channel_layer()
+            payload = {
+                'id': notif.id,
+                'kind': notif.kind,
+                'title': notif.title,
+                'message': notif.message,
+                'link_url': notif.link_url,
+                'is_read': notif.is_read,
+            }
+            async_to_sync(channel_layer.group_send)(f"notif_{m.user.id}", {"type": "notify", "payload": payload})
+        except Exception:
+            pass

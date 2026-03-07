@@ -100,14 +100,20 @@
                 {% endif %}
 
                 {% if active_reg_count > 0 %}
-                  <button
-                    type="button"
-                    class="btn btn-link btn-sm p-0 ms-2 align-baseline"
-                    data-bs-toggle="modal"
-                    data-bs-target="#registrantModal"
-                  >
-                    ดูรายชื่อผู้สมัคร ({{ active_reg_count }})
-                  </button>
+                  {% if user.is_authenticated %}
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm p-0 ms-2 align-baseline"
+                      data-bs-toggle="modal"
+                      data-bs-target="#registrantModal"
+                    >
+                      ดูรายชื่อผู้สมัคร ({{ active_reg_count }})
+                    </button>
+                  {% else %}
+                    <a href="{% url 'login' %}?next={{ request.path }}" class="btn btn-link btn-sm p-0 ms-2 align-baseline">
+                      ดูรายชื่อผู้สมัคร ({{ active_reg_count }})
+                    </a>
+                  {% endif %}
                 {% endif %}
               </div>
 
@@ -115,10 +121,9 @@
                 <div class="mt-1">
                   <span class="badge bg-danger">เต็มแล้ว</span>
                 </div>
-              {% endif %}
-              {% if not post.allow_register %}
+              {% elif not post.allow_register and post.slots_available != 0 and post.create_group or not post.allow_register and post.slots_available != 0 and active_reg_count > 0 %}
                 <div class="mt-1">
-                  <span class="badge bg-secondary">ปิดรับสมัคร</span>
+                  <span class="badge bg-secondary">ปิดรับสมัครแล้ว</span>
                 </div>
               {% endif %}
             </div>
@@ -141,10 +146,14 @@
             <span>หมวดหมู่: {{ post.category }}</span>
           </div>
 
+          {% if user.is_authenticated and has_chat_room and (active_reg_count == 0 or user_is_registered) %}
+          {% if can_access_chat %}
           <a href="{% url 'chat:activity_chat' post.id %}"
             class="btn btn-outline-primary rounded-pill px-4 fw-semibold">
             แชทกิจกรรม
           </a>
+          {% endif %}
+          {% endif %}
 
           <div class="d-flex justify-content-between align-items-center mt-2">
 
@@ -239,15 +248,17 @@
                       เต็มแล้ว
                     </button>
                   {% else %}
+                    {% if not post.allow_register and post.slots_available != 0 and post.create_group or not post.allow_register and post.slots_available != 0 and active_reg_count > 0 %}
                     <button type="button" class="btn btn-secondary rounded-pill px-4 fw-semibold" disabled>
                       ปิดรับสมัครแล้ว
                     </button>
+                    {% endif %}
                   {% endif %}
                 {% endif %}
               {% else %}
                 {% if post.allow_register and not is_full %}
                   <a
-                    href="{% url 'activity_register:register_activity' post.id %}"
+                    href="{% url 'login' %}?next={{ request.path }}"
                     class="btn btn-success rounded-pill px-4 fw-semibold"
                   >
                     สมัคร

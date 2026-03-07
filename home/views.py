@@ -183,7 +183,7 @@ def home_view(request):
 
         # Annotate relevance score using weighted matches
         if hasattr(posts, 'annotate') and tokens:
-            from django.db.models import Case, When, IntegerField, Value
+            from django.db.models import Case, When, IntegerField
             
             phrase = search_query.strip()
             token_exprs = []
@@ -396,8 +396,11 @@ def post_detail_view(request, post_id):
     has_chat_room = ChatRoom.objects.filter(post=post).exists()
 
     user_is_registered = False
-    if my_reg and my_reg.status == 'ACTIVE':
+    if my_reg and my_reg.status == ActivityRegistration.Status.ACTIVE:
         user_is_registered = True
+
+    active_reg_count = post.active_registrations_count()
+    can_access_chat = request.user.is_authenticated and post.create_group and has_chat_room and (active_reg_count == 0 or user_is_registered)
 
     # ไม่ส่ง my_reg ถ้าเป็น CANCELED และสมัครใหม่ได้ (เพื่อไม่ให้ template แสดงสถานะยกเลิก)
     my_reg_for_template = my_reg
@@ -411,10 +414,11 @@ def post_detail_view(request, post_id):
         'avg_rating': avg_rating,
         'avg_rating_int': avg_rating_int,
         'my_reg': my_reg_for_template,
-        'active_reg_count': post.active_registrations_count(),
+        'active_reg_count': active_reg_count,
         'is_full': post.is_full(),
         'has_chat_room': has_chat_room,
         'user_is_registered': user_is_registered,
+        'can_access_chat': can_access_chat,
         'cancel_undo_until_iso': my_reg.cancel_undo_until.isoformat() if my_reg and my_reg.cancel_undo_until else '',
         'cooldown_until_iso': cooldown_until_iso,
         'can_register_again': can_register_again,
