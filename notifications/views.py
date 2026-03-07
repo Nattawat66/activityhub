@@ -60,7 +60,6 @@ def _ensure_activity_notifications(user):
     """
     today = timezone.localdate()
     d1 = today + timedelta(days=1)
-    d2 = today + timedelta(days=2)
     d3 = today + timedelta(days=3)
 
     Post = apps.get_model("post", "Post")
@@ -89,67 +88,52 @@ def _ensure_activity_notifications(user):
     )
 
     # -------------------------
-    # (1) Saved reminders: 3 วันก่อน + 1 วันก่อน
+    # (1) Saved reminders: 3 วันก่อน + 1 วันก่อน (เฉพาะผู้จัดเก็บที่ยังไม่ได้สมัคร)
     # -------------------------
-    saved_posts_3 = user.saved_posts.filter(
-        event_date__date=d3,
-        **base_post_filter,
-    )
-    for p in saved_posts_3:
-        remaining = _remaining_slots(p)
-        # หากกิจกรรมเต็มแล้ว ให้ข้ามการสร้าง reminder (จะมีการแจ้งเตือนเต็มตอนสมัคร)
-        if remaining is not None and remaining <= 0:
-            continue
-        status_text = _capacity_status_text(p)
-        Notification.objects.get_or_create(
-            user=user,
-            post=p,
-            kind=Notification.Kind.SAVED_REMINDER,
-            trigger_date=d3,
-            defaults={
-                "title": p.title,
-                "message": f"กิจกรรมที่คุณจัดเก็บ จะเริ่มในอีก 3 วัน\n{status_text}",
-                "link_url": f"/post/{p.id}/",
-            },
-        )
+    from activity_register.models import ActivityRegistration as _AR
 
-    saved_posts_1 = user.saved_posts.filter(
-        event_date__date=d1,
-        **base_post_filter,
-    )
-    for p in saved_posts_1:
-        remaining = _remaining_slots(p)
-        if remaining is not None and remaining <= 0:
-            continue
-        status_text = _capacity_status_text(p)
-        Notification.objects.get_or_create(
-            user=user,
-            post=p,
-            kind=Notification.Kind.SAVED_REMINDER,
-            trigger_date=d1,
-            defaults={
-                "title": p.title,
-                "message": f"กิจกรรมที่คุณจัดเก็บ จะเริ่มในอีก 1 วัน\n{status_text}",
-                "link_url": f"/post/{p.id}/",
-            },
+    for days_label, target_date in [(3, d3), (1, d1)]:
+        saved_posts = user.saved_posts.filter(
+            event_date__date=target_date,
+            **base_post_filter,
         )
+        for p in saved_posts:
+            # ข้ามถ้าผู้ใช้สมัครกิจกรรมนี้แล้ว (ACTIVE) — ไม่ต้องเตือนผู้จัดเก็บ
+            already_registered = _AR.objects.filter(
+                user=user, post=p, status=_AR.Status.ACTIVE
+            ).exists()
+            if already_registered:
+                continue
+            remaining = _remaining_slots(p)
+            # หากกิจกรรมเต็มแล้ว ไม่ต้องเตือนว่ายังสมัครได้
+            if remaining is not None and remaining <= 0:
+                continue
+            status_text = _capacity_status_text(p)
+            Notification.objects.get_or_create(
+                user=user,
+                post=p,
+                kind=Notification.Kind.SAVED_REMINDER,
+                trigger_date=target_date,
+                defaults={
+                    "title": p.title,
+                    "message": f"กิจกรรมที่คุณจัดเก็บจะเริ่มในอีก {days_label} วัน คุณยังสามารถสมัครได้\n{status_text}",
+                    "link_url": f"/post/{p.id}/",
+                },
+            )
 
     # -------------------------
-    # (2) Register reminder: 1 วันก่อน (ผู้สมัคร)
+    # (2) Register reminder: 1 วันก่อน (ผู้สมัคร — แจ้งเสมอไม่ว่ากิจกรรมจะเต็มหรือไม่)
     # -------------------------
     RegModel = _get_registration_model()
     if RegModel:
-        reg_qs = RegModel.objects.filter(user=user).select_related("post")
+        reg_qs = RegModel.objects.filter(
+            user=user, status=_AR.Status.ACTIVE
+        ).select_related("post")
         for reg in reg_qs:
             p = getattr(reg, "post", None)
             if not p or not getattr(p, "event_date", None):
                 continue
             if timezone.localdate(p.event_date) == d1 and (not p.is_deleted) and (not p.is_hidden) and (p.status == "APPROVED"):
-                remaining = _remaining_slots(p)
-                # ถ้าเต็มแล้ว ให้ข้ามการสร้าง reminder (และผู้จัดจะได้รับ OWNER_FULL ตอนที่เต็ม)
-                if remaining is not None and remaining <= 0:
-                    continue
-                status_text = _capacity_status_text(p)
                 Notification.objects.get_or_create(
                     user=user,
                     post=p,
@@ -157,42 +141,37 @@ def _ensure_activity_notifications(user):
                     trigger_date=d1,
                     defaults={
                         "title": p.title,
-                        "message": f"กิจกรรมที่คุณสมัคร จะเริ่มในอีก 1 วัน\n{status_text}",
+                        "message": f"กิจกรรมที่คุณสมัครจะเริ่มในอีก 1 วัน: {p.title}",
                         "link_url": f"/post/{p.id}/",
                     },
                 )
 
     # -------------------------
-    # (3) Owner status reminder: 2 วันก่อน (ผู้สร้างกิจกรรม)
+    # (3) Owner status reminder: 3 วัน + 1 วันก่อน (ผู้สร้างกิจกรรม)
     # -------------------------
-    owner_posts = Post.objects.filter(
-        organizer=user,
-        event_date__date=d2,
-        **base_post_filter,
-    )
-    for p in owner_posts:
-        # จำนวนผู้สมัคร
-        try:
-            reg_count = p.registrations.count()
-        except Exception:
-            reg_count = 0
-        remaining = _remaining_slots(p)
-        # ถ้าเต็มแล้ว ให้ข้าม OWNER_STATUS_REMINDER (owner ควรได้รับ OWNER_FULL ตอนที่เต็ม)
-        if remaining is not None and remaining <= 0:
-            continue
-
-        status_text = _capacity_status_text(p, reg_count=reg_count)
-        Notification.objects.get_or_create(
-            user=user,
-            post=p,
-            kind=Notification.Kind.OWNER_STATUS_REMINDER,
-            trigger_date=d2,
-            defaults={
-                "title": p.title,
-                "message": f"อีก 2 วันกิจกรรมจะเริ่ม\nสถานะตอนนี้: {status_text}",
-                "link_url": f"/post/{p.id}/",
-            },
+    for days_label, target_date in [(3, d3), (1, d1)]:
+        owner_posts = Post.objects.filter(
+            organizer=user,
+            event_date__date=target_date,
+            **base_post_filter,
         )
+        for p in owner_posts:
+            try:
+                reg_count = _AR.objects.filter(post=p, status=_AR.Status.ACTIVE).count()
+            except Exception:
+                reg_count = 0
+            status_text = _capacity_status_text(p, reg_count=reg_count)
+            Notification.objects.get_or_create(
+                user=user,
+                post=p,
+                kind=Notification.Kind.OWNER_STATUS_REMINDER,
+                trigger_date=target_date,
+                defaults={
+                    "title": p.title,
+                    "message": f"เตือนเจ้าของกิจกรรม: กิจกรรมของคุณจะเริ่มในอีก {days_label} วัน\n{status_text}",
+                    "link_url": f"/post/{p.id}/",
+                },
+            )
 
 
 @login_required
@@ -200,7 +179,14 @@ def _ensure_activity_notifications(user):
 def api_list_notifications(request):
     _ensure_activity_notifications(request.user)
 
-    qs = Notification.objects.filter(user=request.user).order_by("-created_at")[:30]
+    today = timezone.localdate()
+    # แสดงเฉพาะแจ้งเตือนที่ถึง trigger_date แล้ว หรือไม่มี trigger_date (แจ้งทันที)
+    from django.db.models import Q
+    qs = (
+        Notification.objects.filter(user=request.user)
+        .filter(Q(trigger_date__lte=today) | Q(trigger_date__isnull=True))
+        .order_by("-created_at")[:30]
+    )
     data = []
     for n in qs:
         # determine post visibility for the current user so frontend can
@@ -239,7 +225,13 @@ def api_list_notifications(request):
             }
         )
 
-    unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+    # นับเฉพาะ unread ที่ถึง trigger_date แล้ว
+    from django.db.models import Q as _Q
+    unread_count = Notification.objects.filter(
+        user=request.user, is_read=False
+    ).filter(
+        _Q(trigger_date__lte=today) | _Q(trigger_date__isnull=True)
+    ).count()
     return JsonResponse({"unread": unread_count, "items": data})
 
 

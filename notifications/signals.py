@@ -61,24 +61,32 @@ def _schedule_reminders_for_post(post: Post):
                 },
             )
 
-    # Savers (those who saved/bookmarked) — 3 days before
-    trigger_saved = event_date - timedelta(days=3)
-    if trigger_saved >= today:
-        saved_user_ids = post.saves.values_list('pk', flat=True)
-        for uid in saved_user_ids:
-            Notification.objects.get_or_create(
-                user_id=uid,
-                post=post,
-                kind=Notification.Kind.SAVED_REMINDER,
-                trigger_date=trigger_saved,
-                defaults={
-                    'title': post.title,
-                    'message': f"เตือน: เหลือเวลา 3 วันก่อนกิจกรรมเริ่ม\n{_capacity_status_text(post, active_count)}",
-                    'link_url': f"/post/{post.id}/",
-                },
-            )
+    # Savers (those who saved/bookmarked) — 3 days + 1 day before
+    # ข้ามผู้ที่สมัครแล้ว (ACTIVE) เพราะจะได้รับ REGISTER_REMINDER แทน
+    registered_user_ids = set(
+        ActivityRegistration.objects.filter(post=post, status=ActivityRegistration.Status.ACTIVE)
+        .values_list('user_id', flat=True)
+    )
+    saved_user_ids = post.saves.values_list('pk', flat=True)
+    for days_before in (3, 1):
+        trigger_saved = event_date - timedelta(days=days_before)
+        if trigger_saved >= today:
+            for uid in saved_user_ids:
+                if uid in registered_user_ids:
+                    continue
+                Notification.objects.get_or_create(
+                    user_id=uid,
+                    post=post,
+                    kind=Notification.Kind.SAVED_REMINDER,
+                    trigger_date=trigger_saved,
+                    defaults={
+                        'title': post.title,
+                        'message': f"กิจกรรมที่คุณจัดเก็บจะเริ่มในอีก {days_before} วัน คุณยังสามารถสมัครได้\n{_capacity_status_text(post, active_count)}",
+                        'link_url': f"/post/{post.id}/",
+                    },
+                )
 
-    # Registrants — 1 day before
+    # Registrants — 1 day before (แจ้งเสมอไม่ว่ากิจกรรมจะเต็มหรือไม่ เพราะเขาสมัครแล้ว)
     trigger_reg = event_date - timedelta(days=1)
     if trigger_reg >= today:
         reg_user_ids = (
@@ -94,7 +102,7 @@ def _schedule_reminders_for_post(post: Post):
                 trigger_date=trigger_reg,
                 defaults={
                     'title': post.title,
-                    'message': f"เตือนคุณ 1 วันก่อนกิจกรรม: {post.title}\n{_capacity_status_text(post, active_count)}",
+                    'message': f"กิจกรรมที่คุณสมัครจะเริ่มในอีก 1 วัน: {post.title}",
                     'link_url': f"/post/{post.id}/",
                 },
             )
@@ -117,7 +125,7 @@ def _schedule_reminder_for_registration(reg: ActivityRegistration):
         trigger_date=trigger,
         defaults={
             'title': post.title,
-            'message': f"เตือนคุณ 1 วันก่อนกิจกรรม: {post.title}\n{_capacity_status_text(post, ActivityRegistration.objects.filter(post=post, status=ActivityRegistration.Status.ACTIVE).count())}",
+            'message': f"กิจกรรมที่คุณสมัครจะเริ่มในอีก 1 วัน: {post.title}",
             'link_url': f"/post/{post.id}/",
         },
     )
