@@ -172,7 +172,7 @@
         {% for r in user_reports %}
           <div class="admin-row">
             <div class="flex-grow-1">
-              <a class="admin-link" href="{% url 'profile_detail' r.user.id %}" target="_blank">
+              <a class="admin-link" href="{% url 'profile_detail' r.user.email %}" target="_blank">
                 {{ r.user.get_full_name|default:r.user.username }}
               </a>
               <div class="small text-muted">

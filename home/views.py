@@ -400,7 +400,17 @@ def post_detail_view(request, post_id):
         user_is_registered = True
 
     active_reg_count = post.active_registrations_count()
-    can_access_chat = request.user.is_authenticated and post.create_group and has_chat_room and (active_reg_count == 0 or user_is_registered)
+    is_organizer = request.user.is_authenticated and (request.user == post.organizer)
+    can_access_chat = False
+    if request.user.is_authenticated and post.create_group and has_chat_room:
+        # ตรวจว่า post นี้ "ใช้ระบบสมัคร" หรือไม่
+        uses_registration = post.allow_register or post.registrations.exists()
+        if uses_registration:
+            # กิจกรรมแบบรับสมัคร -> ต้องเป็นผู้สมัครหรือเจ้าของกิจกรรมเท่านั้น
+            can_access_chat = user_is_registered or is_organizer
+        else:
+            # กิจกรรมไม่มีระบบสมัครแต่เปิดแชท -> แสดงปุ่มแชทได้เลย
+            can_access_chat = True
 
     # ไม่ส่ง my_reg ถ้าเป็น CANCELED และสมัครใหม่ได้ (เพื่อไม่ให้ template แสดงสถานะยกเลิก)
     my_reg_for_template = my_reg

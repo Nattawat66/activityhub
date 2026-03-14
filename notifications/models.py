@@ -16,6 +16,8 @@ class Notification(models.Model):
         OWNER_POSTED = "OWNER_POSTED", "แจ้งเตือนโพสต์ได้รับการอนุมัติ (ผู้สร้าง)"
         FOLLOWER_NEW_POST = "FOLLOWER_NEW_POST", "แจ้งเตือนเมื่อคนที่ติดตามโพสต์ใหม่"
         CHAT_MESSAGE = "CHAT_MESSAGE", "แจ้งเตือนข้อความแชทใหม่"
+        ADMIN_NEW_POST = "ADMIN_NEW_POST", "แจ้งเตือนมีโพสต์ใหม่รออนุมัติ (แอดมิน)"
+        ADMIN_NEW_REPORT = "ADMIN_NEW_REPORT", "แจ้งเตือนมีรายงานใหม่ (แอดมิน)"
         SYSTEM = "SYSTEM", "ระบบ"
 
     user = models.ForeignKey(

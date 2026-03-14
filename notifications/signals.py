@@ -1,4 +1,5 @@
 from django.db.models.signals import post_save, pre_save
+from django.db import models
 from django.dispatch import receiver
 from django.utils import timezone
 from datetime import timedelta
@@ -411,7 +412,86 @@ def _notify_followers_new_post(post: Post):
 
 
 # -------------------------
-# (6) แจ้งเตือนข้อความแชทใหม่
+# (6) แจ้งเตือนแอดมิน/approver เมื่อมีโพสต์ใหม่รออนุมัติ หรือมีรายงานใหม่
+# -------------------------
+def _push_realtime(user, notif):
+    """ส่ง push ผ่าน channel layer ทันที"""
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+        payload = {
+            'id': notif.id,
+            'kind': notif.kind,
+            'title': notif.title,
+            'message': notif.message,
+            'link_url': notif.link_url,
+            'is_read': notif.is_read,
+        }
+        async_to_sync(channel_layer.group_send)(
+            f"notif_{user.id}", {"type": "notify", "payload": payload}
+        )
+    except Exception:
+        pass
+
+
+def _get_admin_approver_users():
+    """คืนรายชื่อผู้ใช้ที่มี role ADMIN/APPROVER หรือ is_superuser"""
+    from users.models import User
+    return User.objects.filter(
+        is_active=True,
+        is_deleted=False,
+    ).filter(
+        models.Q(role__in=[User.Role.ADMIN, User.Role.APPROVER]) | models.Q(is_superuser=True)
+    )
+
+
+def notify_admins_new_post(post):
+    """แจ้งเตือนแอดมิน/approver ว่ามีโพสต์ใหม่รออนุมัติ"""
+    admins = _get_admin_approver_users()
+    organizer_name = post.organizer.get_full_name() or post.organizer.email
+
+    for admin_user in admins:
+        notif = Notification.objects.create(
+            user=admin_user,
+            post=post,
+            kind=Notification.Kind.ADMIN_NEW_POST,
+            title="มีกิจกรรมใหม่รออนุมัติ",
+            message=f"{organizer_name} ส่งคำขอโพสต์กิจกรรม \"{post.title}\" รออนุมัติ",
+            link_url="/approver/?main=approval",
+        )
+        _push_realtime(admin_user, notif)
+
+
+def notify_admins_new_report(report_type, reporter, target_name, detail=""):
+    """แจ้งเตือนแอดมิน/approver ว่ามีรายงานใหม่"""
+    admins = _get_admin_approver_users()
+    reporter_name = reporter.get_full_name() or reporter.email
+
+    if report_type == "post":
+        title = "มีรายงานโพสต์ใหม่"
+        message = f"{reporter_name} รายงานโพสต์ \"{target_name}\""
+    else:
+        title = "มีรายงานบัญชีใหม่"
+        message = f"{reporter_name} รายงานบัญชี {target_name}"
+
+    if detail:
+        message += f" — เหตุผล: {detail[:80]}"
+
+    for admin_user in admins:
+        notif = Notification.objects.create(
+            user=admin_user,
+            kind=Notification.Kind.ADMIN_NEW_REPORT,
+            title=title,
+            message=message,
+            link_url="/approver/?main=manage&sub=reports",
+        )
+        _push_realtime(admin_user, notif)
+
+
+# -------------------------
+# (7) แจ้งเตือนข้อความแชทใหม่
 # -------------------------
 def notify_chat_message(sender_user, room, message_preview=""):
     """เรียกใช้จาก chat consumer/view เมื่อมีข้อความใหม่"""

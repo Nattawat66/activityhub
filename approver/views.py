@@ -12,6 +12,7 @@ from users.models import User
 
 from .models import PostReport, UserReport
 from .forms import PostReportForm, UserReportForm
+from notifications.signals import notify_admins_new_report
 
 
 # --- Decorator ตรวจสอบ Role ---
@@ -182,6 +183,18 @@ def submit_post_report(request, post_id):
         report.reporter = request.user
         report.post = post
         report.save()
+
+        # แจ้งเตือนแอดมิน/approver
+        try:
+            notify_admins_new_report(
+                report_type="post",
+                reporter=request.user,
+                target_name=post.title,
+                detail=report.reason,
+            )
+        except Exception:
+            pass
+
         messages.success(request, "ส่งรายงานโพสต์เรียบร้อย")
     else:
         messages.error(request, "ส่งรายงานไม่สำเร็จ: กรุณากรอกเหตุผลให้ครบ")
@@ -209,6 +222,18 @@ def submit_user_report(request, user_email):
         report.reporter = request.user
         report.user = target_user
         report.save()
+
+        # แจ้งเตือนแอดมิน/approver
+        try:
+            notify_admins_new_report(
+                report_type="user",
+                reporter=request.user,
+                target_name=target_user.get_full_name() or target_user.email,
+                detail=report.reason,
+            )
+        except Exception:
+            pass
+
         messages.success(request, "ส่งรายงานบัญชีเรียบร้อย")
     else:
         messages.error(request, "ส่งรายงานไม่สำเร็จ: กรุณากรอกเหตุผลให้ครบ")

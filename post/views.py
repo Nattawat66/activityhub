@@ -9,6 +9,7 @@ from .models import Post
 from .forms import PostForm
 from activity_register.models import ActivityReview, ActivityRegistration
 from chat.models import ChatRoom, ChatMembership
+from notifications.signals import notify_admins_new_post
 import json
 
 
@@ -40,6 +41,13 @@ def create_post(request):
                 )
 
             messages.success(request, 'สร้างกิจกรรมสำเร็จ! รอการอนุมัติจากผู้ดูแลระบบ')
+
+            # แจ้งเตือนแอดมิน/approver ว่ามีโพสต์ใหม่รออนุมัติ
+            try:
+                notify_admins_new_post(post)
+            except Exception:
+                pass
+
             return redirect('home:home')
     else:
         form = PostForm()
@@ -90,11 +98,12 @@ def post_update_view(request, post_id):
         return HttpResponseForbidden("คุณไม่มีสิทธิ์แก้ไขกิจกรรมนี้")
 
     if request.method == 'POST':
+        # ✅ บันทึกค่าเดิมก่อนที่ form จะ bind ข้อมูลใหม่เข้า instance
+        old_create_group = post.create_group
+        old_allow_register = post.allow_register
+
         form = PostForm(request.POST, request.FILES, instance=post)
         if form.is_valid():
-            old_create_group = post.create_group
-            old_allow_register = post.allow_register
-
             post = form.save(commit=False)
             post.map_lat = request.POST.get('map_lat') or None
             post.map_lng = request.POST.get('map_lng') or None
@@ -223,11 +232,15 @@ def post_detail_view(request, post_id):
     # นอกจากนี้ต้องมีห้องแชทจริง (`has_chat_room`) และผู้ใช้ล็อกอิน
     can_access_chat = False
     if request.user.is_authenticated and has_chat_room:
-        if post.allow_register:
-            # ระบบใช้การสมัคร -> ต้องเป็นผู้สมัครเท่านั้น
-            can_access_chat = user_is_registered
+        is_organizer = (request.user == post.organizer)
+        # ตรวจว่า post นี้ "ใช้ระบบสมัคร" หรือไม่
+        # (allow_register ยังเปิดอยู่ หรือเคยมีคนสมัคร = เป็นกิจกรรมแบบรับสมัคร)
+        uses_registration = post.allow_register or post.registrations.exists()
+        if uses_registration:
+            # กิจกรรมแบบรับสมัคร -> ต้องเป็นผู้สมัครหรือเจ้าของกิจกรรมเท่านั้น
+            can_access_chat = user_is_registered or is_organizer
         else:
-            # ระบบไม่มีการสมัคร -> ถ้าเจ้าของสร้างห้องแชทไว้ แสดงได้
+            # กิจกรรมไม่มีระบบสมัครแต่เปิดแชท -> แสดงปุ่มแชทได้เลย
             can_access_chat = bool(post.create_group)
 
     # 💡 ทริคสำคัญ: ถ้าสามารถสมัครใหม่ได้ เราจะแปลง my_reg เป็น None ตอนส่งให้หน้า Template
