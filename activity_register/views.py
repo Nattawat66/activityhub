@@ -222,7 +222,7 @@ def register_activity(request, post_id):
                         'birth_date': profile.birth_date,
                         'gender': profile.gender,
                         'current_address': profile.address,
-                        'phone': profile.phone or profile.phone_number,
+                        'phone': profile.phone,
                         'email': request.user.email,
                         'contact_channel': profile.contact_info,
                     }

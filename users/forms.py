@@ -20,7 +20,6 @@ class ProfileUpdateForm(forms.ModelForm):
             'profile_picture',
             'nickname',
             'birth_date',
-            'phone_number',
             'address',
             'gender',
             'phone',
@@ -38,7 +37,6 @@ class ProfileUpdateForm(forms.ModelForm):
             'birth_date': forms.DateInput(
                 attrs={'type': 'date', 'class': 'form-control'}
             ),
-            'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
             'address': forms.Textarea(
                 attrs={'class': 'form-control', 'rows': 2}
             ),

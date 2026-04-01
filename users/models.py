@@ -97,9 +97,8 @@ class Profile(models.Model):
     )
 
     # ข้อมูลส่วนตัว
-    nickname = models.CharField(max_length=100, blank=True)
+    nickname = models.CharField(max_length=30, blank=True)
     birth_date = models.DateField(null=True, blank=True)
-    phone_number = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
     contact_info = models.CharField(
         max_length=255,
@@ -112,7 +111,7 @@ class Profile(models.Model):
         choices=[('ชาย', 'ชาย'), ('หญิง', 'หญิง'), ('อื่นๆ', 'อื่นๆ')],
         blank=True
     )
-    phone = models.CharField(max_length=20, blank=True)
+    phone = models.CharField(max_length=15, blank=True)
     address = models.TextField(blank=True)
 
     # ✅ ระบบติดตาม (โปรไฟล์ติดตามโปรไฟล์)
