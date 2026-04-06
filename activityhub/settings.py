@@ -172,11 +172,8 @@ if 'CLOUDINARY_CLOUD_NAME' in os.environ:
     }
 
 STORAGES = {
-    "default": {
-        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage" if 'CLOUDINARY_CLOUD_NAME' in os.environ else "django.core.files.storage.FileSystemStorage",
-    },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage", # ลบคำว่า Manifest ออก
     },
 }
 
