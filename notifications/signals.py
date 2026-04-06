@@ -429,8 +429,9 @@ def _push_realtime(user, notif):
             'link_url': notif.link_url,
             'is_read': notif.is_read,
         }
+        safe_email = str(user.pk).replace('@', '_').replace('.', '_')
         async_to_sync(channel_layer.group_send)(
-            f"notif_{user.id}", {"type": "notify", "payload": payload}
+            f"notif_{safe_email}", {"type": "notify", "payload": payload}
         )
     except Exception:
         pass
@@ -525,6 +526,7 @@ def notify_chat_message(sender_user, room, message_preview=""):
                 'link_url': notif.link_url,
                 'is_read': notif.is_read,
             }
-            async_to_sync(channel_layer.group_send)(f"notif_{m.user.id}", {"type": "notify", "payload": payload})
+            safe_email = str(m.user.pk).replace('@', '_').replace('.', '_')
+            async_to_sync(channel_layer.group_send)(f"notif_{safe_email}", {"type": "notify", "payload": payload})
         except Exception:
             pass

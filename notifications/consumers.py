@@ -9,7 +9,9 @@ class NotificationsConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
 
-        self.user_group_name = f"notif_{user.id}"
+        # Custom User uses email as PK. Group names can't contain @ or .
+        safe_email = str(user.pk).replace('@', '_').replace('.', '_')
+        self.user_group_name = f"notif_{safe_email}"
 
         await self.channel_layer.group_add(self.user_group_name, self.channel_name)
         await self.accept()
