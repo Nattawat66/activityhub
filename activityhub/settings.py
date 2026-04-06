@@ -14,7 +14,7 @@ from pathlib import Path
 import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+import dj_database_url
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -25,7 +25,17 @@ SECRET_KEY = 'django-insecure-&d+dda2u=(9ogfuvvo*=52e3o2%9q2%@)682!%5+&-du4z8@3!
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+
+
+### เพิ่มใหม่
 ALLOWED_HOSTS = []
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+# ให้รับ DEBUG จากระบบจริง
+DEBUG = 'RENDER' not in os.environ
+### เพิ่มใหม่
+
 
 
 # Application definition
@@ -51,6 +61,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', ### เพิ่มใหม่
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -85,17 +96,27 @@ WSGI_APPLICATION = 'activityhub.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+
+### เพิ่มใหม่
 DATABASES = {
-  "default": {
-    "ENGINE": "django.db.backends.mysql",
-    "NAME": "activityhub",          
-    "USER": "activityhub",
-    "PASSWORD": "activityhub123!",  
-    "HOST": "127.0.0.1",            
-    "PORT": "3306",
-    "OPTIONS": {"charset": "utf8mb4"},
-  }
+    'default': dj_database_url.config(
+        default='mysql://activityhub:activityhub123!@127.0.0.1:3306/activityhub', 
+        conn_max_age=600
+    )
 }
+### เพิ่มใหม่
+
+# DATABASES = {
+#   "default": {
+#     "ENGINE": "django.db.backends.mysql",
+#     "NAME": "activityhub",          
+#     "USER": "activityhub",
+#     "PASSWORD": "activityhub123!",  
+#     "HOST": "127.0.0.1",            
+#     "PORT": "3306",
+#     "OPTIONS": {"charset": "utf8mb4"},
+#   }
+# }
 
 # DATABASES = {
 #     'default': {
@@ -138,6 +159,8 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles') ### เพิ่มใหม่
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage' ### เพิ่มใหม่
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -147,11 +170,23 @@ LOGIN_URL = 'login'
 
 ASGI_APPLICATION = 'activityhub.asgi.application'
 
+# CHANNEL_LAYERS = {
+#     "default": {
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {
+#             "hosts": [("127.0.0.1", 6379)],  # ต้องมี Redis รันอยู่
+#         },
+#     },
+# }
+
+
+### เพิ่มใหม่
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],  # ต้องมี Redis รันอยู่
+            "hosts": [os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')],
         },
     },
 }
+### เพิ่มใหม่
