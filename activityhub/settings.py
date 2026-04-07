@@ -29,11 +29,9 @@ DEBUG = True
 
 ### เพิ่มใหม่
 ALLOWED_HOSTS = []
-CSRF_TRUSTED_ORIGINS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
-    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 # ให้รับ DEBUG จากระบบจริง
 DEBUG = 'RENDER' not in os.environ
 ### เพิ่มใหม่
