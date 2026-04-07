@@ -50,6 +50,6 @@ urlpatterns = [
 
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# หมายเหตุ: ไม่ต้องใช้ static(MEDIA_URL) อีกต่อไป
+# Cloudinary จัดการ URL ของ media files โดยตรง ทั้งใน development และ production
 

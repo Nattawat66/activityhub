@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import cloudinary
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 import dj_database_url
@@ -23,7 +24,7 @@ import dj_database_url
 SECRET_KEY = 'django-insecure-&d+dda2u=(9ogfuvvo*=52e3o2%9q2%@)682!%5+&-du4z8@3!'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 
 
@@ -49,6 +50,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'cloudinary_storage',  ### เพิ่มใหม่ (ต้องอยู่ก่อน cloudinary)
+    'cloudinary',          ### เพิ่มใหม่
     'users',
     'login_register',
     'home',
@@ -157,12 +160,29 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# Media files — เสิร์ฟผ่าน Cloudinary (persistent บน Render)
+MEDIA_URL = '/media/'  # ใช้เป็น prefix เท่านั้น, Cloudinary จะ override URL จริง
 
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles') ### เพิ่มใหม่
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage' ### เพิ่มใหม่
+### Cloudinary config (อ่านจาก environment variables)
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.environ.get('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY':    os.environ.get('CLOUDINARY_API_KEY'),
+    'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET'),
+}
+
+### Django 4.2+ STORAGES dict (แทน STATICFILES_STORAGE / DEFAULT_FILE_STORAGE เก่า)
+STORAGES = {
+    # Media files → Cloudinary (ถาวร ไม่หายแม้ redeploy)
+    'default': {
+        'BACKEND': 'cloudinary_storage.storage.MediaCloudinaryStorage',
+    },
+    # Static files → WhiteNoise (เสิร์ฟจาก staticfiles/ ที่ collectstatic สร้าง)
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
